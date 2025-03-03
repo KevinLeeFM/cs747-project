@@ -1,0 +1,22 @@
+name = "ptranalysis"
+version = "0.1.0"
+defaultTargets = ["ptranalysis"]
+
+[leanOptions]
+pp.unicode.fun = true # pretty-prints `fun a ↦ b`
+autoImplicit = false
+
+[[require]]
+name = "aesop"
+scope = "leanprover-community"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+
+[[lean_lib]]
+name = "Ptranalysis"
+
+[[lean_exe]]
+name = "ptranalysis"
+root = "Main"
