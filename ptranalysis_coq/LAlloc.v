@@ -330,28 +330,6 @@ Proof.
   - apply Nat.eqb_neq in H. contradiction.
 Qed.
 
-(* This lemma is wrong *)
-(* Lemma ConcreteAssignPostcondition :
-  forall {si} {vto vfrom : Var} {site : AllocSite} {p : Control si},
-  ConcretePointsTo p vfrom site ->
-  ConcretePointsTo (Seq p (Assign vto vfrom) (disjointEmptyR si)) vto site.
-Proof.
-  intros.
-  unfold ConcretePointsTo in *.
-  destruct H as [s1]. destruct H as [site1].
-  destruct H as [H1]. destruct H as [H2].
-  remember (State_Mk
-    (State_heap s1)
-    (WriteMap (State_valuation s1) vto (Some site1))
-  ) as s2.
-  exists s2. exists site1.
-  split. 2: {
-    split; rewrite Heqs2; simpl.
-    - rewrite WriteMapThenRead. reflexivity.
-    - assumption.
-  }
-  unfold Reachable. exists (Empty_set _). exists Skip. *)
-
 (* Lemma PointsToSequenceDecompose {si1 si2} {s : State} {p1 : Control si1} {p2 : Control si2} {v : Var} {site : AllocSite} (dis : Disjoint _ si1 si2) :
   ConcretePointsTo (Seq p1 p2 dis) v site ->
   ConcretePointsTo p1 v site \/ ConcretePointsTo p2 v site \/ (ConcretePointsTo p1 vfrom site /\ PTMove p2 vto vfrom)
@@ -359,12 +337,54 @@ Proof.
   intros.
   inversion H as [s1].  *)
 
-(* TODO: AndersenToSequenceDecompose *)
+(* PTMoveClosure is an approximated version of ConcreteMoveClosure
+   E.g. of things not accounted for:
+   - Overwriting a variable v1 with a new value prior to move to v2. The old
+   value is still considered moved to v2 even though it didn't happen!
+*)
+Inductive PTMoveClosure : forall {si}, Control si -> Var -> Var -> Prop :=
+| PTMoveClosure_Refl :
+    forall {si} (p : Control si) (v : Var), PTMoveClosure p v v
+| PTMoveClosure_Trans :
+    forall {si} (p : Control si) (vto vinter vfrom : Var),
+    PTMoveClosure p vinter vfrom ->
+    PTMove p vto vinter ->
+    PTMoveClosure p vto vfrom.
 
-(* Lemma MoveAcrossSequence {si1 si2} {s : State} {p1 : Control si1} {p2 : Control si2} {vto vfrom : Var} {site : AllocSite} (dis : Disjoint _ si1 si2) :
-  ConcretePointsTo p1 vfrom site ->
-  PTMove p2 vto vfrom -> *)
+(* Keep in mind that the alloc can even come AFTER or DURING the series of moves.
+  This analysis is flow-insensitive, so it doesn't matter. *)
+Lemma AndersenMoveClosureCarriesAlloc : forall {si} {p : Control si} {vto vfrom : Var} {site : AllocSite},
+  PTMoveClosure p vto vfrom ->
+  PTAlloc p vfrom site ->
+  Andersen p vto site.
+Proof.
+  intros.
+  dependent induction H.
+  - econstructor. assumption.
+  - apply IHPTMoveClosure in H1 as H2.
+    eapply Andersen_Move.
+    + exact H0.
+    + exact H2.
+Qed.
 
+(* Definition VarState : Type := Var -> option Var. *)
+(* Definition Moving : Prop :=
+
+Inductive ConcreteMoveClosure :
+  forall {si1 si2}, Control si -> State -> Control si -> Var -> Var -> Prop :=
+| ConcreteMoveClosure_Refl :
+    forall {si} {p : Control si} {s : State} {v : Var},
+    ConcreteMoveClosure p s p v v
+| 
+   *)
+
+(* Definition ConcretePointingTo {si} (p : Control si) (v : Var) (site : AllocSite) (s : State) : Prop :=
+    StepClosure p EmptyState Skip s /\
+    State_valuation s v = Some site /\
+    match State_heap s site with
+    | Some hObj => HeapObj_site hObj = site
+    | None => False
+    end. *)
 
 Theorem Andersen_sound : SoundApprox ConcretePointsTo Andersen. Proof.
   unfold SoundApprox.
