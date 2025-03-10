@@ -32,11 +32,6 @@ Record State := State_Mk {
   State_valuation : Valuation
 }.
 
-(* Print Assumptions proof_irrelevance. *)
-
-(* Inductive StepState (si : Ensemble AllocSite) : Type :=
-| StepState_Mk : Control si -> State -> StepState si. *)
-
 Definition EmptyState := State_Mk (fun _ => None) (fun _ => None).
 
 Definition WriteMap {Ret} (f : Var -> Ret) (k : Var) (v : Ret) : Var -> Ret :=
@@ -312,14 +307,6 @@ Proof.
   Unshelve. assumption.
 Qed.
 
-(* Lemma PointsToPreservation
-  {si si'} {s : State} {p : Control si} {p' : Control si'}
-  {v : Var} {site : AllocSite}
-  (dis : Disjoint _ si si') :
-  ConcretePointsTo p v site -> ConcretePointsTo (Seq p p' dis) v site.
-Proof.
-   *)
-
 Lemma WriteMapThenRead : forall {Ret} (f : Var -> Ret) (k : Var) (v : Ret),
   WriteMap f k v k = v.
 Proof.
@@ -329,13 +316,6 @@ Proof.
   - reflexivity.
   - apply Nat.eqb_neq in H. contradiction.
 Qed.
-
-(* Lemma PointsToSequenceDecompose {si1 si2} {s : State} {p1 : Control si1} {p2 : Control si2} {v : Var} {site : AllocSite} (dis : Disjoint _ si1 si2) :
-  ConcretePointsTo (Seq p1 p2 dis) v site ->
-  ConcretePointsTo p1 v site \/ ConcretePointsTo p2 v site \/ (ConcretePointsTo p1 vfrom site /\ PTMove p2 vto vfrom)
-Proof.
-  intros.
-  inversion H as [s1].  *)
 
 (* PTMoveClosure is an approximated version of ConcreteMoveClosure
    E.g. of things not accounted for:
@@ -367,24 +347,25 @@ Proof.
     + exact H2.
 Qed.
 
-(* Definition VarState : Type := Var -> option Var. *)
-(* Definition Moving : Prop :=
+Definition NotAssigningToVar {si} (p : Control si) (v : Var) : Prop :=
+  forall (vfrom : Var), ~PTMove p v vfrom.
 
-Inductive ConcreteMoveClosure :
-  forall {si1 si2}, Control si -> State -> Control si -> Var -> Var -> Prop :=
-| ConcreteMoveClosure_Refl :
-    forall {si} {p : Control si} {s : State} {v : Var},
-    ConcreteMoveClosure p s p v v
-| 
-   *)
+(* Inductive ConcreteSiteMoveClosure : forall {ss}, Control ss -> AllocSite -> Var -> Var -> Prop :=
+| ConcreteSiteMove_Alloc :
+    forall {ss} {l : AllocSite} {vto : Var},
+    ConcreteSiteMove (Alloc l vto) l vto vto
+| ConcreteSiteMove_Prsv :
 
-(* Definition ConcretePointingTo {si} (p : Control si) (v : Var) (site : AllocSite) (s : State) : Prop :=
-    StepClosure p EmptyState Skip s /\
-    State_valuation s v = Some site /\
-    match State_heap s site with
-    | Some hObj => HeapObj_site hObj = site
-    | None => False
-    end. *)
+| ConcreteSiteMove_Seq :
+    forall {ss1 ss2} {p1 : Control ss1} {p2 : Control ss2} {site : AllocSite} {vto vinter vfrom : Var},
+    ConcreteSiteMove p1 site vinter vfrom ->
+    ConcreteSiteMove (Seq (Alloc vinter )) site vto vinter -> 
+    ConcreteSiteMove (Seq p1 p2 (disjointEmptyL ss1)) site vto vfrom *)
+
+Lemma ConcretePointsToImpliesPTMove : forall {si} {p : Control si} {v1 v2 : Var} {site : AllocSite},
+  ConcretePointsTo p v1 site ->
+  PTMove p v1 v2 ->
+  ConcretePointsTo p v2 site.
 
 Theorem Andersen_sound : SoundApprox ConcretePointsTo Andersen. Proof.
   unfold SoundApprox.
