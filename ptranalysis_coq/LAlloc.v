@@ -357,21 +357,6 @@ Proof.
     + exact H2.
 Qed.
 
-(* Definition NotAssigningToVar {si} (p : Control si) (v : Var) : Prop :=
-  forall (vfrom : Var), ~PTMove p v vfrom. *)
-
-(* Inductive ConcreteSiteMoveClosure : forall {ss}, Control ss -> AllocSite -> Var -> Var -> Prop :=
-| ConcreteSiteMove_Alloc :
-    forall {ss} {l : AllocSite} {vto : Var},
-    ConcreteSiteMove (Alloc l vto) l vto vto
-| ConcreteSiteMove_Prsv :
-
-| ConcreteSiteMove_Seq :
-    forall {ss1 ss2} {p1 : Control ss1} {p2 : Control ss2} {site : AllocSite} {vto vinter vfrom : Var},
-    ConcreteSiteMove p1 site vinter vfrom ->
-    ConcreteSiteMove (Seq (Alloc vinter )) site vto vinter -> 
-    ConcreteSiteMove (Seq p1 p2 (disjointEmptyL ss1)) site vto vfrom *)
-
 Definition CondReachable {si} (program : Control si) (pre : State) (s : State) : Prop :=
   exists (si' : Ensemble AllocSite) (program' : Control si'),
   StepClosure program pre program' s.
@@ -438,24 +423,6 @@ Proof.
   - specialize H with v. contradiction. 
 Qed.
 
-(* Quite useless. Might get deleted *)
-(* Lemma IrrelevantWriteMap {Ret} : forall {v v' : Var} {val : Ret} {sig sig' : Val -> Ret},
-  sig' = WriteMap sig v val ->
-  v =? v' = false ->
-  sig' v' = sig v'.
-Proof.
-  intros.
-  subst. unfold WriteMap. rewrite H0. reflexivity.
-Qed. *)
-
-(* Lemma NoAllocCanOccur : forall {si1 si2} {s1 s2 : State} {c1 : Control si1} {c2 : Control si2} {p : Addr} {site : AllocSite},  
-  StepClosure c1 s1 c2 s2 ->
-  State_heap s1 p = None ->
-  State_heap s2 p = None ->
-  (~PTAlloc ).
-Proof.
-  intros. *)
-
 Lemma AllocBeginsNewPointsTo : forall {site : AllocSite} {v : Var} {s1 s2 : State},
   Step (Alloc site v) s1 Skip s2 -> ConcreteStatePointsTo s2 v site.
 Proof.
@@ -521,12 +488,22 @@ Proof.
   - contradiction.
 Qed.
 
+Lemma SingletonNotEmpty : forall {U : Type} {x : U},
+  Singleton U x <> Empty_set U.
+Proof.
+  unfold not. intros.
+  assert (In U (Singleton U x) x) as H1. { constructor. }
+  rewrite H in H1. inversion H1.
+Qed.
+
 (* Due to Control being a dependent type, proving the below 2 theorems turns
   out to be quite non-trivial. *)
 Lemma AssignStepToSkip : forall {vto vfrom : Var} {s1 s2 : State} {c2},
   Step (Assign vto vfrom) s1 c2 s2 -> c2 = Skip.
 Proof.
-  intros. inversion H. subst. inversion_sigma H2; subst.
+  intros.
+  inversion H. subst.
+  inversion_sigma H2; subst.
   assert (H2_ = eq_refl) as H2eq. { apply UIP. }
   rewrite H2eq. reflexivity.
 Qed.
@@ -535,11 +512,14 @@ Lemma AllocStepToSkip :
   forall {vto : Var} {site : AllocSite} {s1 s2 : State} {c2},
   Step (Alloc vto site) s1 c2 s2 -> c2 = Skip.
 Proof.
-  intros. inversion H. subst. inversion_sigma H4; subst.
+  intros.
+  inversion H. subst.
+  inversion_sigma H4; subst.
   assert (H4_ = eq_refl) as H2eq. { apply UIP. }
   rewrite H2eq. reflexivity.
 Qed.
 
+(* Convert a lemma about Step to one about StepClosure. *)
 Lemma AssignStepLemmaClosure :
   forall {vto vfrom : Var} {s1 s2 : State} {con : Prop},
   (Step (Assign vto vfrom) s1 Skip s2 -> con) ->
@@ -550,123 +530,148 @@ Proof.
   dependent induction H0.
   inversion H; subst.
   pose proof (AssignStepToSkip H). subst.
-  apply SkipDoesNothingClosure2 in H0 as H0'. destruct H0'. subst.
+  apply SkipDoesNothingClosure2 in H0 as H0'.
+  destruct H0'. subst.
   assumption.
 Qed.
 
 Lemma AllocStepLemmaClosure :
   forall {vto vfrom : Var} {s1 s2 : State} {con : Prop},
-  (Step (Assign vto vfrom) s1 Skip s2 -> con) ->
-  (StepClosure (Assign vto vfrom) s1 Skip s2 -> con).
+  (Step (Alloc vto vfrom) s1 Skip s2 -> con) ->
+  (StepClosure (Alloc vto vfrom) s1 Skip s2 -> con).
 Proof.
   intros.
   apply H. clear H.
-  dependent induction H0.
+  dependent induction H0. { apply SingletonNotEmpty in x0. contradiction. }
   inversion H; subst.
-  pose proof (AssignStepToSkip H). subst.
-  apply SkipDoesNothingClosure2 in H0 as H0'. destruct H0'. subst.
+  pose proof (AllocStepToSkip H). subst.
+  apply SkipDoesNothingClosure2 in H0 as H0'.
+  destruct H0'. subst.
   assumption.
 Qed.
 
-(* Definition NotSkip : forall {si} (eq: Empty_set _ = si), Control si -> Prop :=
-  fun si eq p => p <> eq_rect _ Control Skip _ eq.
+(* Lemma SeqChainsConcretePointsTo :
+  forall {si1 si2} {s1 s2 s3} {c1 : Control si1} {c2 : Control si2} {site} {v1 v2},
+  (StepClosure c1 s1 Skip s2 -> con1)
+  (StepClosure c2 s2 Skip s3 -> con2)
+  (ConcreteStatePointsTo s1 v1 site) *)
 
-Lemma SkipNotNotSkip : forall (eq0: Empty_set AllocSite = Empty_set AllocSite), NotSkip eq0 Skip -> False.
-Proof.
-  unfold NotSkip. intros.
-  rewrite (UIP_refl _ _ eq0) in H. contradiction.
-Qed.
+(*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+PROBLEM: WE NEED LEMMAS OF THIS FORM
 
-Lemma StepLemmaClosure :
-  forall {si} {s s' : State} {p : Control si} {con : Prop},
-  (Step p s Skip s' -> con) ->
-  (* This long-winded hypothesis excludes p = Skip *)
-  (forall {eq: Empty_set _ = si}, NotSkip eq p) ->
-  (StepClosure p s Skip s' -> con).
+the point closure is very important
+for more general claims! You can start
+simple with just Step, but it won't
+be enough
+v
+StepClosure c s1 Skip s2 ->
+Concrete points-to claim about s2 ->
+Any other claim ->
+c = something1 \/ something2 \/ something3 
+
+EVEN THIS IS PROBABLY NOT ENOUGH
+
+Step c s1 Skip s2 ->
+Concrete points-to claim about s1 ->
+Concrete points-to claim about s2 ->
+Any other claim ->
+c = something
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+ *)
+
+(* Not generalizable to IMP, reserve for last resort *)
+(* Inductive SiteMoveClosure : forall {si},
+  AllocSite -> Control si -> Var -> Var -> Prop :=
+| AllocMoveClosure_Alloc :
+    forall {si} {site : AllocSite} {v : Var},
+    SiteMoveClosure site (Alloc site v) v v
+| AllocMoveClosure_Move :
+    forall {si} {site : AllocSite} {vto vfrom : Var} {c : Control si},
+    SiteMoveClosure site c vfrom vfrom ->
+    SiteMoveClosure site (Seq c (Assign vto vfrom)) vto vfrom
+     *)
+
+(* 
+  ConcretePointsTo c v site |- Andersen c v site
+
+  exists s,
+  Reachable c s
+  ConcreteStatePointsTo s v site
+  |- exists vfrom, PTMoveClosure c v vfrom /\ PTAlloc c vfrom site
+
+  s : State
+  Reachable c s
+  ConcreteStatePointsTo s v site
+  |- 
+*)
+
+Lemma CompleteConcretePointsToImpliesAllocCarrying :
+  forall {si} {c : Control si} {vto : Var} {site : AllocSite} {s},
+  StepClosure c EmptyState Skip s ->
+  ConcreteStatePointsTo s vto site ->
+  (exists vfrom, PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
 Proof.
   intros.
-  apply H. clear H.
-  dependent induction H1.
-  - pose proof (eq_refl (Empty_set AllocSite)) as eq0. specialize H0 with eq0.
-    apply SkipNotNotSkip in H0. contradiction.
-  -  *)
+  
+Lemma Concrete
 
-(* Lemma NoUnallocatedInValuation : forall {s : State} {p : Addr},
-  Consistent s ->
-  (State_heap s p = None) ->
-  ~exists v, (State_valuation s v) = Some p.
-Proof.
-  unfold Consistent. unfold Reachable. unfold not. intros.
-  destruct H as [si]. destruct H as [program]. destruct H as [si']. destruct H as [program'].
-  destruct H1 as [v].
-  dependent induction H.
-  { unfold State_valuation in H1. discriminate. }
-  dependent induction H.
-  - crush. *)
-
-Lemma AllocMustOccur : forall {si si'} {p : Control si} {p' : Control si'} {v : Var} {site : AllocSite} {s s' : State},
-  (forall v', ~ConcreteStatePointsTo s v' site) ->
-  Step p s p' s' ->
-  ConcreteStatePointsTo s' v site ->
-  PTAlloc p v site.
-Proof.
-  intros.
-  unfold ConcreteStatePointsTo in *.
-  dependent induction H0.
-  - erewrite <- PTAllocComposition. crush.
-  - specialize H with v. contradiction.
-  - specialize H with v as Hfrom.
-    pose proof (MovePreservesNoPoints H H0).
-    specialize H2 with v. contradiction.
-  - rewrite H2 in *. rewrite H1 in *.
-    destruct (vto =? v) eqn:vcase.
-    + subst. unfold WriteMap in H3. simpl in *.
-      destruct H3 as [p]. destruct H1.
-      rewrite vcase in H1.
-      injection H1 as H1. subst.
-      rewrite Nat.eqb_refl in *.
-      unfold HeapObj_site in H2.
-      split.
-      * apply Nat.eqb_eq. rewrite Nat.eqb_sym. trivial.
-      * rewrite H2. trivial.
-    + destruct H3 as [p].
-      destruct (addr =? p) eqn:acase.
-      (* In the cast that addr =? p = true, it's not possible since p was not 
-         allocated and no writes happened to v. *)
-      * apply Nat.eqb_eq in acase as acase'.
-        (* pose proof (IrrelevantWriteMap H2 vcase) as HIrr. *)
-        unfold WriteMap in *. simpl in *.
-        rewrite vcase in H3. rewrite acase in H3. destruct H3.
-        rewrite acase' in H3.
-
-
-
-    
-      (* unfold not in H.
-      destruct (addr =? p) eqn:acase. *)
-      (* destruct (addr =? p) eqn:acase. subst.
-      *  *)
-      (* destruct H.
-      destruct (addr =? p) eqn:acase.
-      * apply Nat.eqb_eq in acase. subst.
-        rewr *)
-      
-    (* split.
-    + destruct (vto =? v) eqn:vcase; subst.
-      { apply Nat.eqb_eq. rewrite Nat.eqb_sym. trivial. }
-      destruct H3 as [p].
-      destruct (addr =? p) eqn:acase; subst.
-      * destruct H1. unfold HeapObj_site in H2. *)
-    
 Lemma ConcretePointsToImpliesAllocCarrying :
   forall {si} {p : Control si} {v1 : Var} {site : AllocSite},
   ConcretePointsTo p v1 site ->
   (exists v2, PTMoveClosure p v1 v2 /\ PTAlloc p v2 site).
 Proof.
   intros.
-  dependent induction p.
-  4: {
-  }
+  
 
 (* Theorem Andersen_sound : SoundApprox ConcretePointsTo Andersen. Proof.
   unfold SoundApprox.
