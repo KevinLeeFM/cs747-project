@@ -496,6 +496,13 @@ Proof.
   rewrite H in H1. inversion H1.
 Qed.
 
+Lemma SingletonNotEmptyAlt : forall {U : Type} {x : U},
+  Empty_set U <> Singleton U x.
+Proof.
+  intros.
+  pose proof (@SingletonNotEmpty U x). auto.
+Qed.
+
 (* Due to Control being a dependent type, proving the below 2 theorems turns
   out to be quite non-trivial. *)
 Lemma AssignStepToSkip : forall {vto vfrom : Var} {s1 s2 : State} {c2},
@@ -556,79 +563,6 @@ Qed.
   (StepClosure c2 s2 Skip s3 -> con2)
   (ConcreteStatePointsTo s1 v1 site) *)
 
-(*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-PROBLEM: WE NEED LEMMAS OF THIS FORM
-
-the point closure is very important
-for more general claims! You can start
-simple with just Step, but it won't
-be enough
-v
-StepClosure c s1 Skip s2 ->
-Concrete points-to claim about s2 ->
-Any other claim ->
-c = something1 \/ something2 \/ something3 
-
-EVEN THIS IS PROBABLY NOT ENOUGH
-
-Step c s1 Skip s2 ->
-Concrete points-to claim about s1 ->
-Concrete points-to claim about s2 ->
-Any other claim ->
-c = something
-
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
- *)
-
 (* Not generalizable to IMP, reserve for last resort *)
 (* Inductive SiteMoveClosure : forall {si},
   AllocSite -> Control si -> Var -> Var -> Prop :=
@@ -655,6 +589,228 @@ c = something
   |- 
 *)
 
+(* Head indicates the next instruction to be run for a Control. *)
+Inductive Head : forall {isic isih}, Control isic -> Control isih -> Prop :=
+| Head_SeqL : forall
+    {sic1 sic2 sih} {c1 : Control sic1}
+    {c2 : Control sic2} {h : Control sih}
+    (dis : Disjoint _ sic1 sic2),
+    Head c1 h -> Head (Seq c1 c2 dis) h
+| Head_SeqR : forall {sic} {c : Control sic},
+    Head (SkipLSeq c) Skip
+| Head_Assign : forall {vto vfrom},
+    Head (Assign vto vfrom) (Assign vto vfrom)
+| Head_Alloc : forall {site} {vto},
+    Head (Alloc site vto) (Alloc site vto).
+
+(* This is the same as Step except state information is erased. 
+
+   For LAlloc where a lack of state information still yields determinism,
+   Succ always points to one Control.
+   For more complicated languages, multiple results are possible.
+ *)
+Inductive Succ : forall {si sisucc}, Control si -> Control sisucc -> Prop :=
+(* Skips are ignored by successor *)
+| Succ_SeqL : forall
+    {sic1 sic1' sic2}
+    {c1 : Control sic1} {c1' : Control sic1'} {c2 : Control sic2}
+    (dis : Disjoint _ sic1 sic2)
+    (dis' : Disjoint _ sic1' sic2),
+    Succ c1 c1' -> Succ (Seq c1 c2 dis) (Seq c1' c2 dis')
+| Succ_SeqR : forall {sic sic'} {c : Control sic} {c' : Control sic'},
+    Succ (SkipLSeq c) c
+| Succ_Alloc : forall {site} {vto}, Succ (Alloc site vto) Skip
+| Succ_Assign : forall {vfrom} {vto}, Succ (Assign vto vfrom) Skip.
+
+Inductive SuccClosure : forall {sia sib},
+  Control sia -> Control sib -> Prop :=
+| SuccClosure_Refl : forall {si} {c : Control si},
+  SuccClosure c c
+| SuccClosure_Step : forall
+    {sia sib sic}
+    {c1 : Control sia} {c2 : Control sib} {c3 : Control sic},
+    Succ c1 c2 ->
+    SuccClosure c2 c3 ->
+    SuccClosure c1 c3.
+
+Definition PointsToStatus := (Var * AllocSite) -> Prop.
+
+Definition EmptyStatus : PointsToStatus := fun _ => False.
+
+(* AFPT is an attempt to describe a transition between two
+   controls without relying on any state information.
+   
+   One may think of it as a combination of StepClosure and 
+   ConcreteStatePointsTo except state is erased. *)
+Inductive AbstractFlowPointsTo : forall {si1 si2}, PointsToStatus -> Control si1 -> Control si2 -> PointsToStatus -> Prop :=
+| AFPT_Reflect : forall {si} {c : Control si} {pts : PointsToStatus}, 
+    AbstractFlowPointsTo pts c c pts
+| AFPT_Trans : forall
+    {si1 si2 si3} {pts1 pts2 pts3}
+    {c1 : Control si1} {c2 : Control si2} {c3 : Control si3},
+    AbstractFlowPointsTo pts1 c1 c2 pts2 ->
+    AbstractFlowPointsTo pts2 c2 c3 pts3 ->
+    AbstractFlowPointsTo pts1 c1 c3 pts3
+| AFPT_Skip : forall
+    {pts : PointsToStatus}
+    {si1 si2}
+    {c1 : Control si1} {c2 : Control si2},
+    Succ c1 c2 ->
+    Head c1 Skip ->
+    AbstractFlowPointsTo pts c1 c2 pts
+| AFPT_Alloc : forall
+    {si1 si2}
+    {c1 : Control si1} {c2 : Control si2}
+    {site site1} {v v1}
+    {pts1 pts2 : PointsToStatus},
+    Succ c1 c2 ->
+    Head c1 (Alloc v site) ->
+    pts2 (v, site) ->
+    (v <> v1 -> pts1 (v1, site1) -> pts2 (v1, site1)) ->
+    AbstractFlowPointsTo pts1 c1 c2 pts2
+| AFPT_Move : forall
+    {si1 si2}
+    {c1 : Control si1} {c2 : Control si2}
+    {site site1} {vfrom vto v1}
+    {pts1 pts2 : PointsToStatus},
+    Succ c1 c2 ->
+    Head c1 (Assign vto vfrom) ->
+    pts1 (vfrom, site) ->
+    pts2 (vto, site) ->
+    (vto <> v1 -> pts1 (v1, site1) -> pts2 (v1, site1)) ->
+    AbstractFlowPointsTo pts1 c1 c2 pts2.
+
+Lemma StepStateErasure : forall
+    {si1 si2} {c1 : Control si1} {c2 : Control si2}
+    {s1 s2},
+    Step c1 s1 c2 s2 -> Succ c1 c2.
+Proof.
+  intros.
+  dependent induction H; econstructor; eassumption.
+Qed.
+
+Lemma StepClosureStateErasure : forall
+    {si1 si2} {c1 : Control si1} {c2 : Control si2}
+    {s1 s2},
+    StepClosure c1 s1 c2 s2 -> SuccClosure c1 c2.
+Proof.
+  intros.
+  dependent induction H.
+  { constructor. }
+  apply StepStateErasure in H.
+  econstructor; eassumption.
+Qed.
+
+Lemma AFPTImpliesSucc : forall
+  {si1 si2} {c1 : Control si1} {c2 : Control si2}
+  {pts1 pts2},
+  AbstractFlowPointsTo pts1 c1 c2 pts2 ->
+  Succ c1 c2.
+
+(* Lemma Succ *)
+
+(* Lemma CompleteConcretePointsToImpliesAFPT : 
+  forall {si} {c : Control si} {s} {vto} {site} {pts},
+    StepClosure c EmptyState Skip s ->
+    ConcreteStatePointsTo s vto site ->
+    AbstractFlowPointsTo EmptyStatus c Skip pts ->
+    pts (vto, site).
+Proof.
+  intros. *)
+
+(* (* The deprecated " ~= " for some reason kept
+showing up in my proof even though I never used it.
+This could be a bug in the standard library.
+I'm using UIP for now to rewrite them as " = " *)
+Lemma JMeqImpliesEq : forall
+  {si1 si2} {c1 : Control si1} {c2 : Control si2},
+  c1 <> c2 -> ~(c1 ~= c2).
+Proof.
+  unfold not. intros.
+  apply H. inversion H0.
+  inversion_sigma H4. *)
+
+Lemma SingletonInjection : forall {A} {x y : A},
+  Singleton A x = Singleton A y -> x = y.
+Proof.
+  intros.
+  assert (In _ (Singleton _ x) y) as H0.
+  { rewrite H. econstructor. }
+  inversion H0.
+  reflexivity.
+Qed.
+
+Lemma HeadContainsAlloc : forall
+  {si} {c : Control si} {vto} {site},
+  Head c (Alloc site vto) -> PTAlloc c vto site.
+Proof.
+  intros.
+  dependent induction H.
+  - specialize IHHead with vto site.
+    apply PTAllocComposition. left.
+    apply IHHead; reflexivity.
+  - apply SingletonNotEmptyAlt in x0. contradiction.
+  - apply SingletonNotEmptyAlt in x0. contradiction.
+  - apply SingletonInjection in x0 as x1.
+    rewrite x1. rewrite x1 in x.
+    apply JMeq_eq in x.
+    rewrite x. constructor; reflexivity.
+Qed.
+
+Lemma AFPTImpliesAllocCarryingRecursive :
+  forall {si} {c : Control si} {vto} {site} {pts1},
+  ~(pts1 (vto, site)) ->
+  (exists pts2,
+    (AbstractFlowPointsTo pts1 c Skip pts2 /\
+    pts2 (vto, site))) ->
+  (exists vfrom,
+    PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
+Proof.
+  intros.
+  destruct H0 as [pts2].
+  destruct H0 as [H1].
+  dependent induction H1.
+  - contradiction.
+  (* To solve this case, we need to break the problem
+     into the following cases:
+     - pts2 (vto, site):
+       Both alloc and series of moves occured in c1 -> c2.
+       By induction, the conclusion is satisfied by c1.
+     - ~(pts2 (vto, site))
+       Both alloc and series of moves occured in c2 -> Skip.
+       By induction, the conclusion is satisfied by c2
+       which implies that it is also satisfied by c1, since
+       c2 is a sub-program of c1.
+     - Alloc occured in c1 -> c2 with a series of move to an
+       intermediate variable, and
+       another series of moves occured in c2 -> Skip.
+       By induction, a variant of the conclusion is satisfied by an
+       intermediate variable vmid and c1, then a move closure exists from vmid
+       to vto within c2. This is sufficient to show that
+       a move closure exists from vto to vfrom in c1, thus
+       satisfying the conclusion.
+  *)
+  - give_up.
+  - contradiction.
+  - exists vto. split.
+    * constructor.
+    * inversion H0; subst.
+
+(* We're trying to prove this, but we need to point this to a recursive version, seen above *)
+Lemma AFPTImpliesAllocCarrying :
+  forall {si} {c : Control si} {vto} {site},
+  (exists pts,
+    AbstractFlowPointsTo EmptyStatus c Skip pts /\
+    pts (vto, site)) ->
+  (exists vfrom,
+    PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
+Proof.
+  intros.
+  destruct H as [pts]. destruct H.
+  dependent induction H.
+  - contradiction.
+  - 
+
 Lemma CompleteConcretePointsToImpliesAllocCarrying :
   forall {si} {c : Control si} {vto : Var} {site : AllocSite} {s},
   StepClosure c EmptyState Skip s ->
@@ -662,8 +818,6 @@ Lemma CompleteConcretePointsToImpliesAllocCarrying :
   (exists vfrom, PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
 Proof.
   intros.
-  
-Lemma Concrete
 
 Lemma ConcretePointsToImpliesAllocCarrying :
   forall {si} {p : Control si} {v1 : Var} {site : AllocSite},
