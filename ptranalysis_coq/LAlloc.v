@@ -557,38 +557,6 @@ Proof.
   assumption.
 Qed.
 
-(* Lemma SeqChainsConcretePointsTo :
-  forall {si1 si2} {s1 s2 s3} {c1 : Control si1} {c2 : Control si2} {site} {v1 v2},
-  (StepClosure c1 s1 Skip s2 -> con1)
-  (StepClosure c2 s2 Skip s3 -> con2)
-  (ConcreteStatePointsTo s1 v1 site) *)
-
-(* Not generalizable to IMP, reserve for last resort *)
-(* Inductive SiteMoveClosure : forall {si},
-  AllocSite -> Control si -> Var -> Var -> Prop :=
-| AllocMoveClosure_Alloc :
-    forall {si} {site : AllocSite} {v : Var},
-    SiteMoveClosure site (Alloc site v) v v
-| AllocMoveClosure_Move :
-    forall {si} {site : AllocSite} {vto vfrom : Var} {c : Control si},
-    SiteMoveClosure site c vfrom vfrom ->
-    SiteMoveClosure site (Seq c (Assign vto vfrom)) vto vfrom
-     *)
-
-(* 
-  ConcretePointsTo c v site |- Andersen c v site
-
-  exists s,
-  Reachable c s
-  ConcreteStatePointsTo s v site
-  |- exists vfrom, PTMoveClosure c v vfrom /\ PTAlloc c vfrom site
-
-  s : State
-  Reachable c s
-  ConcreteStatePointsTo s v site
-  |- 
-*)
-
 (* Head indicates the next instruction to be run for a Control. *)
 Inductive Head : forall {isic isih}, Control isic -> Control isih -> Prop :=
 | Head_SeqL : forall
@@ -664,7 +632,7 @@ Inductive AbstractFlowPointsTo : forall {si1 si2}, PointsToStatus -> Control si1
     {site site1} {v v1}
     {pts1 pts2 : PointsToStatus},
     Succ c1 c2 ->
-    Head c1 (Alloc v site) ->
+    Head c1 (Alloc site v) ->
     pts2 (v, site) ->
     (v <> v1 -> pts1 (v1, site1) -> pts2 (v1, site1)) ->
     AbstractFlowPointsTo pts1 c1 c2 pts2
@@ -717,18 +685,6 @@ Lemma AFPTImpliesSucc : forall
     pts (vto, site).
 Proof.
   intros. *)
-
-(* (* The deprecated " ~= " for some reason kept
-showing up in my proof even though I never used it.
-This could be a bug in the standard library.
-I'm using UIP for now to rewrite them as " = " *)
-Lemma JMeqImpliesEq : forall
-  {si1 si2} {c1 : Control si1} {c2 : Control si2},
-  c1 <> c2 -> ~(c1 ~= c2).
-Proof.
-  unfold not. intros.
-  apply H. inversion H0.
-  inversion_sigma H4. *)
 
 Lemma SingletonInjection : forall {A} {x y : A},
   Singleton A x = Singleton A y -> x = y.
@@ -792,9 +748,8 @@ Proof.
   *)
   - give_up.
   - contradiction.
-  - exists vto. split.
-    * constructor.
-    * inversion H0; subst.
+  - assert
+
 
 (* We're trying to prove this, but we need to point this to a recursive version, seen above *)
 Lemma AFPTImpliesAllocCarrying :
