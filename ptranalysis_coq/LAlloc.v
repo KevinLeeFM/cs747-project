@@ -390,7 +390,6 @@ Proof.
   - unfold PTAlloc. crush.
 Qed.
 
-(* TODO: might be useless. Remove if not used. *)
 Lemma AllocSuperProgram : forall {si si'} {p : Control si} {p' : Control si'} {v : Var} {site : AllocSite} {s s' : State},
   Step p s p' s' -> PTAlloc p' v site -> PTAlloc p v site.
 Proof.
@@ -569,7 +568,8 @@ Inductive Head : forall {isic isih}, Control isic -> Control isih -> Prop :=
 | Head_Assign : forall {vto vfrom},
     Head (Assign vto vfrom) (Assign vto vfrom)
 | Head_Alloc : forall {site} {vto},
-    Head (Alloc site vto) (Alloc site vto).
+    Head (Alloc site vto) (Alloc site vto)
+| Head_Skip : Head Skip Skip.
 
 (* This is the same as Step except state information is erased. 
 
@@ -675,17 +675,6 @@ Lemma AFPTImpliesSucc : forall
   AbstractFlowPointsTo pts1 c1 c2 pts2 ->
   Succ c1 c2.
 
-(* Lemma Succ *)
-
-(* Lemma CompleteConcretePointsToImpliesAFPT : 
-  forall {si} {c : Control si} {s} {vto} {site} {pts},
-    StepClosure c EmptyState Skip s ->
-    ConcreteStatePointsTo s vto site ->
-    AbstractFlowPointsTo EmptyStatus c Skip pts ->
-    pts (vto, site).
-Proof.
-  intros. *)
-
 Lemma SingletonInjection : forall {A} {x y : A},
   Singleton A x = Singleton A y -> x = y.
 Proof.
@@ -711,6 +700,8 @@ Proof.
     rewrite x1. rewrite x1 in x.
     apply JMeq_eq in x.
     rewrite x. constructor; reflexivity.
+  - apply SingletonNotEmptyAlt in x0.
+    contradiction.
 Qed.
 
 Lemma AFPTImpliesAllocCarryingRecursive :
@@ -748,7 +739,9 @@ Proof.
   *)
   - give_up.
   - contradiction.
-  - assert
+  - give_up.
+Admitted.
+(* Give up for the time being *)
 
 
 (* We're trying to prove this, but we need to point this to a recursive version, seen above *)
@@ -759,12 +752,8 @@ Lemma AFPTImpliesAllocCarrying :
     pts (vto, site)) ->
   (exists vfrom,
     PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
-Proof.
-  intros.
-  destruct H as [pts]. destruct H.
-  dependent induction H.
-  - contradiction.
-  - 
+Admitted. 
+(* Give up for the time being since it is no longer useful. *)
 
 Lemma CompleteConcretePointsToImpliesAllocCarrying :
   forall {si} {c : Control si} {vto : Var} {site : AllocSite} {s},
@@ -773,6 +762,8 @@ Lemma CompleteConcretePointsToImpliesAllocCarrying :
   (exists vfrom, PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
 Proof.
   intros.
+Admitted. 
+(* Give up for the time being since it is no longer useful. *)
 
 Lemma ConcretePointsToImpliesAllocCarrying :
   forall {si} {p : Control si} {v1 : Var} {site : AllocSite},
@@ -780,7 +771,203 @@ Lemma ConcretePointsToImpliesAllocCarrying :
   (exists v2, PTMoveClosure p v1 v2 /\ PTAlloc p v2 site).
 Proof.
   intros.
+Admitted. 
+(* Give up for the time being since it is no longer useful. *)
+
+(* NOTE: At this point, my supervisor intervened and suggests that I prove the soundness of Andersen in LAlloc from a different angle. Since we have been defining Andersen as a sort of step closure, it is known from experience to be very hard to prove. Instead, we will redefine Andersen as a stepping analysis, to avoid the logical overhead of dealing with transitive closure. *)
+
+(* Analysis comes with its own abstract state, which we've actually defined earlier already: PointsToStatus. At least not everything before this is useless. *)
+
+Definition StatusMove
+  (pts : PointsToStatus)
+  (vfrom : Var) (vto : Var)
+   : PointsToStatus :=
+    fun p =>
+    match p with (v, site) =>
+      if Nat.eqb v vto then
+        pts (vfrom, site) \/ pts (vto, site)
+      else
+        pts (v, site)
+    end.
+
+Definition StatusAlloc
+  (pts : PointsToStatus)
+  (asite : AllocSite) (vto : Var)
+   : PointsToStatus :=
+    fun p =>
+    match p with (v, site) =>
+      if (andb (Nat.eqb v vto) (Nat.eqb site asite)) then True
+      else pts (v, site)
+    end.
+
+Definition ConcreteAnalysis (s : State) : PointsToStatus :=
+  fun p =>
+  exists val,
+  State_valuation s (fst p) = Some val /\
+    match State_heap s val with
+    | Some hObj => HeapObj_site hObj = snd p
+    | None => False
+    end.
+
+Definition Overapprox (pts1 pts2 : PointsToStatus) : Prop :=
+  forall p, pts1 p -> pts2 p.
+
+Inductive AndersenStep : forall {si_a si_b},
+  Control si_a -> PointsToStatus -> Control si_b -> PointsToStatus -> Prop :=
+| AStep_SeqL : forall
+  {si1 si2 si1' : Ensemble AllocSite}
+  {pts pts' : PointsToStatus}
+  {c1 : Control si1} {c2 : Control si2} {c1' : Control si1'}
+  (dis : Disjoint _ si1 si2)
+  (dis' : Disjoint _ si1' si2),
+  AndersenStep c1 pts c1' pts' -> AndersenStep (Seq c1 c2 dis) pts (Seq c1' c2 dis') pts'
+| AStep_SeqR : forall
+  {si} {c : Control si} {pts : PointsToStatus},
+  AndersenStep (SkipLSeq c) pts c pts
+| AStep_Assign : forall
+  {pts pts'} {vfrom vto},
+  pts' = StatusMove pts vfrom vto ->
+  AndersenStep (Assign vto vfrom) pts Skip pts'
+| AStep_Alloc : forall
+  {pts pts'} {vto} {site},
+  pts' = StatusAlloc pts site vto ->
+  AndersenStep (Alloc site vto) pts Skip pts'.
+
+Ltac inject_existT H :=
+  inversion_sigma H;
+  match goal with
+  | [ H1 : _ = _ |- _ ] =>
+      let Hname := fresh H "eq" in
+      assert (Hname : H1 = eq_refl) by apply UIP;
+      rewrite Hname in *;
+      simpl in *
+  end.
+
+Ltac inject_all_existT :=
+  repeat match goal with
+  | H : existT _ _ _ = existT _ _ _ |- _ =>
+      inject_existT H; subst
+  end.
+
+(* Lemma AndersenStepSeq *)
+
+(* Lemma AndersenRemoveSeq : forall {si1 si2 si0} {c1 : Control si1} {c2 : Control si2} {c0 : Control si0}
+  {pts1 pts2 : PointsToStatus} {dis : Disjoint _ si1 si2},
+  AndersenStep (Seq c1 c2 dis) pts1 c0 pts2 ->
+  forall {si1s} {c1s : Control si1s},
+    Succ c1 c1s ->
+    AndersenStep c1 pts1 c1s pts2.
+Proof.
+  intros.
+  dependent induction H.
+  - specialize IHAndersenStep with si1 si2
+
+Lemma AndersenStepHeadGen : forall {si1 si2} {c1 : Control si1} {pts1 pts2 pts3 : PointsToStatus} {ch : Control si2},
+  Head c1 ch ->
+  AndersenStep ch pts1 Skip pts2 ->
+  forall {c2 : Control si2},
+    AndersenStep c1 pts1 c2 pts3 ->
+    pts2 = pts3.
+Proof.
+  intros.
+  destruct ch.
+  - inversion H0.
+  - inversion H0; subst.
+    dependent induction H.
+    specialize IHHead with v v0. crush. *)
+
+(* Lemma AndersenStepSeqExtension : forall
+  {si1 si2 si0 si3}
+  {c1 : Control si1} {c2 : Control si2} {c0 : Control si0} {c3 : Control si3}
+  {dis : Disjoint _ si1 si0}
+  {f : PointsToStatus -> PointsToStatus},
+  (forall {pts1 pts2}, AndersenStep c1 pts1 c2 pts2 -> f pts1 = pts2) ->
+  (forall {pts1 pts2}, AndersenStep (Seq c1 c0 dis) pts1 c3 pts2 -> f pts1 = pts2).
+Proof.
+  intros.
+   *)
+
+Lemma AndersenStepSkip : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
+  Head c1 Skip ->
+  AndersenStep c1 pts1 c2 pts2 ->
+  pts1 = pts2.
+Proof.
+  intros.
+  dependent induction H0; try reflexivity;
+  inversion H; subst; inject_all_existT.
+  - apply IHAndersenStep in H4. assumption.
+  - apply IHAndersenStep. constructor.
+Qed.
+
+(* Lemma AndersenStepAssign : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus} {vfrom vto : Var},
+  Head c1 (Assign vto vfrom) ->
+  AndersenStep c1 pts1 c2 pts2 ->
+  StatusMove pts1 vfrom vto = pts2.
+Proof.
+  intros. *)
+
+Lemma AndersenStepErasure : forall
+    {si1 si2} {c1 : Control si1} {c2 : Control si2}
+    {pts1 pts2},
+    AndersenStep c1 pts1 c2 pts2 -> Succ c1 c2.
+Admitted. 
+(* TODO *)
+
+Lemma AndersenStepIgnoresSucc : forall
+  {si1 si1' si2 si2' sih}
+  {c1 : Control si1} {c1' : Control si1'} {c2 : Control si2} {c2' : Control si2'} {ch : Control sih} {pts pts' : PointsToStatus},
+  Head c1 ch ->
+  Head c2 ch ->
+  Succ c1 c1' ->
+  Succ c2 c2' ->
+  AndersenStep c1 pts c1' pts' ->
+  AndersenStep c2 pts c2' pts'.
+Proof.
+  (* intros.
+  dependent induction H1.
+  - inversion H; subst; inject_all_existT.
+    * subst. apply IHAndersenStep in H6; assumption.
+    * subst. pose proof (Head_Skip) as HSkip. apply IHAndersenStep in HSkip; assumption.
+  - inversion H; subst; inject_all_existT.
+    * inversion H5. subst. inject_all_existT.
+      eapply AndersenStepSkip in H0. exact H0. exact H2.
+    * eapply AndersenStepSkip in H0. exact H0. exact H2.
+  - inversion H; subst.
+    inject_all_existT.
+    inversion H0; subst; inject_all_existT. *)
+Admitted.
+
+Lemma AndersenStepPartial : forall
+  {si_a si_a' si_b}
+  {c1 : Control si_a} {c1' : Control si_a'} {c2 : Control si_b}
+  {pts1 pts2 pts3 : PointsToStatus}
+  {dis : Disjoint _ si_a si_b}
+  {dis' : Disjoint _ si_a' si_b},
+  AndersenStep (Seq c1 c2 dis) pts1 (Seq c1' c2 dis') pts2 ->
+  AndersenStep c1 pts1 c1' pts2.
+Proof.
+  (* intros.
+  assert (exists (si_h : Ensemble AllocSite) (ch : Control si_h), (Head c1 ch) /\ (Head (Seq c1 c2 dis) ch)) as Hch.
+  2: {
+    destruct Hch as [si_h]. destruct H0 as [ch]. destruct H0. 
+    eapply AndersenStepIgnoresSucc.
+    5: { exact H. }
+    - exact H1.
+    - exact H0.
+    - 
+  }
+  1: {
+
+  } *)
   
+Theorem AndersenStepSound : forall {si_a si_b} {c1 : Control si_a} {c2 : Control si_b} {s1 s2} {pts1 pts2},
+  Overapprox (ConcreteAnalysis s1) pts1 ->
+  Step c1 s1 c2 s2 ->
+  AndersenStep c1 pts1 c2 pts2 ->
+  Overapprox (ConcreteAnalysis s2) pts2.
+Proof.
+  intros.
+  dependent induction H0.
 
 (* Theorem Andersen_sound : SoundApprox ConcretePointsTo Andersen. Proof.
   unfold SoundApprox.
