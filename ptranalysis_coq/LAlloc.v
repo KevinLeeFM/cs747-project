@@ -849,45 +849,33 @@ Ltac inject_all_existT :=
       inject_existT H; subst
   end.
 
-(* Lemma AndersenStepSeq *)
+(* Lemma HeadTrimSeq : forall
+  {si1 si2 si0} {c1 : Control si1} {c2 : Control si2} {c0 : Control si0}
+  {dis : Disjoint _ si1 si0},
+  Head (Seq c1 c2 dis) c2 -> Succ c1 c2. *)
 
-(* Lemma AndersenRemoveSeq : forall {si1 si2 si0} {c1 : Control si1} {c2 : Control si2} {c0 : Control si0}
-  {pts1 pts2 : PointsToStatus} {dis : Disjoint _ si1 si2},
-  AndersenStep (Seq c1 c2 dis) pts1 c0 pts2 ->
-  forall {si1s} {c1s : Control si1s},
-    Succ c1 c1s ->
-    AndersenStep c1 pts1 c1s pts2.
+(* Lemma AndersenStepSeqExt : forall
+  {si1 si2 si3} {c1_1 : Control si1} {c1_2 : Control si2} {c2 : Control si3}
+  {pts : PointsToStatus} {dis : Disjoint _ si1 si2},
+  AndersenStep c1_1 pts c2 pts -> AndersenStep (Seq c1_1 c1_2 dis) pts c2 pts.
+Proof. *)
+
+Lemma AndersenInvertSeqR : forall
+  {si} {c : Control si} {pts : PointsToStatus}
+  {dis : Disjoint _ (Empty_set AllocSite) si},
+  AndersenStep (Seq Skip c dis) pts c pts.
 Proof.
   intros.
-  dependent induction H.
-  - specialize IHAndersenStep with si1 si2
+  assert (Seq Skip c dis = SkipLSeq c) as HSkip.
+  { unfold SkipLSeq. 
+    assert (dis = disjointEmptyL (si)) as Hdis.
+    { apply proof_irrelevance. }
+    rewrite Hdis. reflexivity.
+  }
+  rewrite HSkip. constructor.
+Qed.
 
-Lemma AndersenStepHeadGen : forall {si1 si2} {c1 : Control si1} {pts1 pts2 pts3 : PointsToStatus} {ch : Control si2},
-  Head c1 ch ->
-  AndersenStep ch pts1 Skip pts2 ->
-  forall {c2 : Control si2},
-    AndersenStep c1 pts1 c2 pts3 ->
-    pts2 = pts3.
-Proof.
-  intros.
-  destruct ch.
-  - inversion H0.
-  - inversion H0; subst.
-    dependent induction H.
-    specialize IHHead with v v0. crush. *)
-
-(* Lemma AndersenStepSeqExtension : forall
-  {si1 si2 si0 si3}
-  {c1 : Control si1} {c2 : Control si2} {c0 : Control si0} {c3 : Control si3}
-  {dis : Disjoint _ si1 si0}
-  {f : PointsToStatus -> PointsToStatus},
-  (forall {pts1 pts2}, AndersenStep c1 pts1 c2 pts2 -> f pts1 = pts2) ->
-  (forall {pts1 pts2}, AndersenStep (Seq c1 c0 dis) pts1 c3 pts2 -> f pts1 = pts2).
-Proof.
-  intros.
-   *)
-
-Lemma AndersenStepSkip : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
+Lemma AndersenStepSkip1 : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
   Head c1 Skip ->
   AndersenStep c1 pts1 c2 pts2 ->
   pts1 = pts2.
@@ -897,6 +885,28 @@ Proof.
   inversion H; subst; inject_all_existT.
   - apply IHAndersenStep in H4. assumption.
   - apply IHAndersenStep. constructor.
+Qed.
+
+Lemma AndersenStepSkip : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts : PointsToStatus},
+  Head c1 Skip ->
+  Succ c1 c2 -> 
+  AndersenStep c1 pts c2 pts.
+Proof.
+  intros.
+  dependent induction c1;
+  inversion H; subst; inject_all_existT.
+  - inversion H0.
+  - destruct c2;
+    try (inversion H0; subst; inject_all_existT;
+    apply AndersenInvertSeqR).
+    inversion H0; subst; inject_all_existT.
+    + constructor. specialize IHc1_1 with c2_1 pts.
+    (* eapply AStep_SeqL. inversion H; subst; inject_all_existT. *)
+
+  (* dependent induction H0; try reflexivity;
+  inversion H; subst; inject_all_existT.
+  - apply IHAndersenStep in H4. assumption.
+  - apply IHAndersenStep. constructor. *)
 Qed.
 
 (* Lemma AndersenStepAssign : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus} {vfrom vto : Var},
@@ -910,8 +920,12 @@ Lemma AndersenStepErasure : forall
     {si1 si2} {c1 : Control si1} {c2 : Control si2}
     {pts1 pts2},
     AndersenStep c1 pts1 c2 pts2 -> Succ c1 c2.
-Admitted. 
-(* TODO *)
+Proof.
+  intros.
+  dependent induction H;
+  econstructor;
+  eassumption.
+Qed.
 
 Lemma AndersenStepIgnoresSucc : forall
   {si1 si1' si2 si2' sih}
@@ -923,19 +937,21 @@ Lemma AndersenStepIgnoresSucc : forall
   AndersenStep c1 pts c1' pts' ->
   AndersenStep c2 pts c2' pts'.
 Proof.
-  (* intros.
-  dependent induction H1.
+  intros.
+  dependent induction H3.
+  - inversion H;
+    subst; inject_all_existT;
+    apply AndersenStepErasure in H3.
+    * subst. apply IHAndersenStep in H7; assumption.
+    * subst. pose proof (Head_Skip) as HSkip.
+      apply IHAndersenStep in HSkip; assumption.
   - inversion H; subst; inject_all_existT.
-    * subst. apply IHAndersenStep in H6; assumption.
-    * subst. pose proof (Head_Skip) as HSkip. apply IHAndersenStep in HSkip; assumption.
-  - inversion H; subst; inject_all_existT.
-    * inversion H5. subst. inject_all_existT.
+    * inversion H6. subst. inject_all_existT.
       eapply AndersenStepSkip in H0. exact H0. exact H2.
     * eapply AndersenStepSkip in H0. exact H0. exact H2.
   - inversion H; subst.
     inject_all_existT.
-    inversion H0; subst; inject_all_existT. *)
-Admitted.
+    inversion H0; subst; inject_all_existT.
 
 Lemma AndersenStepPartial : forall
   {si_a si_a' si_b}
@@ -946,6 +962,8 @@ Lemma AndersenStepPartial : forall
   AndersenStep (Seq c1 c2 dis) pts1 (Seq c1' c2 dis') pts2 ->
   AndersenStep c1 pts1 c1' pts2.
 Proof.
+  intros.
+  dependent induction H.
   (* intros.
   assert (exists (si_h : Ensemble AllocSite) (ch : Control si_h), (Head c1 ch) /\ (Head (Seq c1 c2 dis) ch)) as Hch.
   2: {
