@@ -849,16 +849,39 @@ Ltac inject_all_existT :=
       inject_existT H; subst
   end.
 
-(* Lemma HeadTrimSeq : forall
-  {si1 si2 si0} {c1 : Control si1} {c2 : Control si2} {c0 : Control si0}
-  {dis : Disjoint _ si1 si0},
-  Head (Seq c1 c2 dis) c2 -> Succ c1 c2. *)
+Lemma AndersenStepErasure : forall
+    {si1 si2} {c1 : Control si1} {c2 : Control si2}
+    {pts1 pts2},
+    AndersenStep c1 pts1 c2 pts2 -> Succ c1 c2.
+Proof.
+  intros.
+  dependent induction H;
+  econstructor;
+  eassumption.
+Qed.
 
-(* Lemma AndersenStepSeqExt : forall
-  {si1 si2 si3} {c1_1 : Control si1} {c1_2 : Control si2} {c2 : Control si3}
-  {pts : PointsToStatus} {dis : Disjoint _ si1 si2},
-  AndersenStep c1_1 pts c2 pts -> AndersenStep (Seq c1_1 c1_2 dis) pts c2 pts.
-Proof. *)
+Lemma AndersenStepRestoration : forall
+  {si1 si2} {c1 : Control si1} {c2 : Control si2},
+  Succ c1 c2 ->
+  forall pts1, exists pts2,
+  AndersenStep c1 pts1 c2 pts2.
+Proof.
+  intros.
+  dependent induction H.
+  - specialize IHSucc with pts1. destruct IHSucc as [pts2].
+    exists pts2. constructor. assumption.
+  - exists pts1. constructor.
+  - exists (StatusAlloc pts1 site vto).
+    constructor. reflexivity.
+  - exists (StatusMove pts1 vfrom vto).
+    constructor. reflexivity.
+Qed.
+
+Definition AndersenStepHoare {sih} (ch : Control sih) (f : PointsToStatus -> PointsToStatus) : Prop :=
+  forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
+  Head c1 ch ->
+  AndersenStep c1 pts1 c2 pts2 ->
+  f pts1 = pts2.
 
 Lemma AndersenInvertSeqR : forall
   {si} {c : Control si} {pts : PointsToStatus}
@@ -875,11 +898,12 @@ Proof.
   rewrite HSkip. constructor.
 Qed.
 
-Lemma AndersenStepSkip1 : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
-  Head c1 Skip ->
-  AndersenStep c1 pts1 c2 pts2 ->
-  pts1 = pts2.
+Lemma AndersenStepSkip : 
+  AndersenStepHoare
+    Skip
+    (fun pts1 => pts1).
 Proof.
+  unfold AndersenStepHoare.
   intros.
   dependent induction H0; try reflexivity;
   inversion H; subst; inject_all_existT.
@@ -887,44 +911,46 @@ Proof.
   - apply IHAndersenStep. constructor.
 Qed.
 
-Lemma AndersenStepSkip : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts : PointsToStatus},
-  Head c1 Skip ->
-  Succ c1 c2 -> 
-  AndersenStep c1 pts c2 pts.
+Lemma AndersenStepAssign : forall {vfrom vto : Var},
+  AndersenStepHoare
+    (Assign vto vfrom)
+    (fun pts1 => StatusMove pts1 vfrom vto).
 Proof.
+  unfold AndersenStepHoare.
   intros.
-  dependent induction c1;
-  inversion H; subst; inject_all_existT.
-  - inversion H0.
-  - destruct c2;
-    try (inversion H0; subst; inject_all_existT;
-    apply AndersenInvertSeqR).
-    inversion H0; subst; inject_all_existT.
-    + constructor. specialize IHc1_1 with c2_1 pts.
-    (* eapply AStep_SeqL. inversion H; subst; inject_all_existT. *)
-
-  (* dependent induction H0; try reflexivity;
-  inversion H; subst; inject_all_existT.
-  - apply IHAndersenStep in H4. assumption.
-  - apply IHAndersenStep. constructor. *)
+  dependent induction H0;
+  inversion H; subst; inject_all_existT; crush.
+  - inversion H3.
 Qed.
 
-(* Lemma AndersenStepAssign : forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus} {vfrom vto : Var},
-  Head c1 (Assign vto vfrom) ->
-  AndersenStep c1 pts1 c2 pts2 ->
-  StatusMove pts1 vfrom vto = pts2.
+Lemma AndersenStepAlloc : forall {site : AllocSite} {vto : Var},
+  AndersenStepHoare
+    (Alloc site vto)
+    (fun pts1 => StatusAlloc pts1 site vto).
 Proof.
-  intros. *)
-
-Lemma AndersenStepErasure : forall
-    {si1 si2} {c1 : Control si1} {c2 : Control si2}
-    {pts1 pts2},
-    AndersenStep c1 pts1 c2 pts2 -> Succ c1 c2.
-Proof.
+  unfold AndersenStepHoare.
   intros.
-  dependent induction H;
-  econstructor;
-  eassumption.
+  dependent induction H0;
+  inversion H; subst; inject_all_existT; crush.
+  - inversion H3.
+Qed.
+
+Lemma AndersenStepHoareRestore : forall
+  {si1 sih sis}
+  {c1 : Control si1} {ch : Control sih} {cs : Control sis}
+  {f : PointsToStatus -> PointsToStatus},
+  AndersenStepHoare ch f ->
+  Head c1 ch ->
+  Succ c1 cs ->
+  forall pts, AndersenStep c1 pts cs (f pts).
+Proof.
+  unfold AndersenStepHoare.
+  intros.
+  eapply AndersenStepRestoration in H1.
+  destruct H1 as [pts2].
+  eapply H in H1 as H2.
+  - rewrite <- H2 in H1. exact H1.
+  - assumption.
 Qed.
 
 Lemma AndersenStepIgnoresSucc : forall
@@ -945,13 +971,20 @@ Proof.
     * subst. apply IHAndersenStep in H7; assumption.
     * subst. pose proof (Head_Skip) as HSkip.
       apply IHAndersenStep in HSkip; assumption.
-  - inversion H; subst; inject_all_existT.
-    * inversion H6. subst. inject_all_existT.
-      eapply AndersenStepSkip in H0. exact H0. exact H2.
-    * eapply AndersenStepSkip in H0. exact H0. exact H2.
-  - inversion H; subst.
+  - inversion H; subst;
+    inject_all_existT;
+    epose proof (AndersenStepHoareRestore AndersenStepSkip) as HSkip;
+    eapply HSkip; try assumption.
+    * inversion H6; subst; inject_all_existT. assumption.
+  - inversion H; subst;
     inject_all_existT.
-    inversion H0; subst; inject_all_existT.
+    epose proof (AndersenStepHoareRestore AndersenStepAssign) as HAssign;
+    eapply HAssign; try assumption.
+  - inversion H; subst;
+    inject_all_existT.
+    epose proof (AndersenStepHoareRestore AndersenStepAlloc) as HAlloc;
+    eapply HAlloc; try assumption.
+Qed.
 
 Lemma AndersenStepPartial : forall
   {si_a si_a' si_b}
