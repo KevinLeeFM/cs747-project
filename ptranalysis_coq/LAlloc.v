@@ -876,12 +876,23 @@ Proof.
   - exists (StatusMove pts1 vfrom vto).
     constructor. reflexivity.
 Qed.
-
+  
 Definition AndersenStepHoare {sih} (ch : Control sih) (f : PointsToStatus -> PointsToStatus) : Prop :=
   forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
   Head c1 ch ->
   AndersenStep c1 pts1 c2 pts2 ->
   f pts1 = pts2.
+
+Lemma ToSkipLSeq : forall
+  {si} {c : Control si} {dis : Disjoint _ (Empty_set AllocSite) si},
+  Seq Skip c dis = SkipLSeq c.
+Proof.
+  intros.
+  unfold SkipLSeq.
+  assert (dis = disjointEmptyL (si)) as Hdis.
+  { apply proof_irrelevance. }
+  rewrite Hdis. reflexivity.
+Qed.
 
 Lemma AndersenInvertSeqR : forall
   {si} {c : Control si} {pts : PointsToStatus}
@@ -889,13 +900,8 @@ Lemma AndersenInvertSeqR : forall
   AndersenStep (Seq Skip c dis) pts c pts.
 Proof.
   intros.
-  assert (Seq Skip c dis = SkipLSeq c) as HSkip.
-  { unfold SkipLSeq. 
-    assert (dis = disjointEmptyL (si)) as Hdis.
-    { apply proof_irrelevance. }
-    rewrite Hdis. reflexivity.
-  }
-  rewrite HSkip. constructor.
+  rewrite ToSkipLSeq.
+  constructor.
 Qed.
 
 Lemma AndersenStepSkip : 
@@ -986,6 +992,62 @@ Proof.
     eapply HAlloc; try assumption.
 Qed.
 
+Lemma AlwaysHead : forall {si} {c : Control si},
+  exists si2 (c2 : Control si2),
+  Head c c2.
+Proof.
+  intros.
+  dependent induction c.
+  - exists (Empty_set AllocSite). exists Skip.
+    constructor.
+  - exists (Empty_set AllocSite). exists (Assign v v0). 
+    constructor.
+  - exists (Singleton _ l). exists (Alloc l vto).
+    constructor.
+  - destruct IHc1 as [si3 [c3]].
+    eexists. eexists. constructor.
+    exact H.
+Qed.
+
+(* Unfortunately, I have gotten stuck trying to prove the below fact, which has been leading me to nothing but dead ends. We are certain that in our imperative programming system, recursive definition of program is not allowed. As such, we will pose this as an axiom.
+
+It would be ideal to try and prove this without requiring defining such an axiom, such as showing the lack of well-foundedness of this value. But this is rather pedantic and not relevant to our domain of interest. *)
+
+Axiom no_recursion :
+  forall (si1' si2 : Ensemble AllocSite)
+         (c1' : Control si1') (c2 : Control si2)
+         (dis : Disjoint _ si1' si2)
+         (H5_ : Union _ si1' si2 = si2),
+    eq_rect _ (fun s2 => Control s2)
+            (Seq c1' c2 dis) si2 H5_ <> c2.
+
+Lemma NoSuccForSkip : forall {si1' si2} {c1' : Control si1'} {c2 : Control si2} {dis : Disjoint _ si1' si2},
+  Succ (SkipLSeq c2) (Seq c1' c2 dis) -> False.
+Proof.
+  intros.
+  inversion H; subst; inject_all_existT.
+  - inversion H3.
+  - inversion_sigma H5; subst.
+    apply no_recursion in H5_0.
+    contradiction.
+Qed.
+
+Lemma SuccSeqTrim : forall
+  {si1 si2 si1'}
+  {c1 : Control si1} {c2 : Control si2} {c1' : Control si1'}
+  {dis : Disjoint _ si1 si2} {dis' : Disjoint _ si1' si2},
+  Succ (Seq c1 c2 dis) (Seq c1' c2 dis') ->
+  Succ c1 c1'.
+Proof.
+  intros.
+  inversion H; subst; inject_all_existT.
+  - assumption.
+  - inversion H; subst; inject_all_existT.
+    + exact H6.
+    + erewrite ToSkipLSeq in H. eapply NoSuccForSkip in H. 
+      contradiction.
+Qed.
+
 Lemma AndersenStepPartial : forall
   {si_a si_a' si_b}
   {c1 : Control si_a} {c1' : Control si_a'} {c2 : Control si_b}
@@ -996,20 +1058,27 @@ Lemma AndersenStepPartial : forall
   AndersenStep c1 pts1 c1' pts2.
 Proof.
   intros.
-  dependent induction H.
-  (* intros.
   assert (exists (si_h : Ensemble AllocSite) (ch : Control si_h), (Head c1 ch) /\ (Head (Seq c1 c2 dis) ch)) as Hch.
   2: {
-    destruct Hch as [si_h]. destruct H0 as [ch]. destruct H0. 
+    destruct Hch as [si_h [ch]].
+    destruct H0. 
     eapply AndersenStepIgnoresSucc.
     5: { exact H. }
     - exact H1.
     - exact H0.
-    - 
+    - apply AndersenStepErasure in H. assumption.
+    - apply AndersenStepErasure in H. apply SuccSeqTrim in H. assumption.
   }
   1: {
-
-  } *)
+    pose proof (@AlwaysHead) as Hhead. specialize 
+    Hhead with si_a c1.
+    destruct Hhead as [si3 [c3 Hhead]].
+    eexists si3. eexists.
+    split.
+    - exact Hhead.
+    - constructor. exact Hhead.
+  }
+Qed.
   
 Theorem AndersenStepSound : forall {si_a si_b} {c1 : Control si_a} {c2 : Control si_b} {s1 s2} {pts1 pts2},
   Overapprox (ConcreteAnalysis s1) pts1 ->
