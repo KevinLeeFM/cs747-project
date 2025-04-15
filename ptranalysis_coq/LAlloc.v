@@ -1120,4 +1120,33 @@ Proof.
       unfold WriteMap in *.
       simpl in *. rewrite Nat.eqb_sym in vcase.
       rewrite vcase in H0. assumption.
-  - 
+  - assert (StatusAlloc pts1 l vto = pts2) as Heq. {
+      eapply AndersenStepAlloc.
+      2: { exact H3. }
+      constructor.
+    }
+    subst. unfold StatusAlloc. unfold Overapprox in *.
+    intros.
+    destruct p as [v site].
+    unfold ConcreteAnalysis in *.
+    unfold WriteMap in *. simpl in *.
+    destruct (andb (v =? vto) (site =? l)) eqn:case. { trivial. }
+    specialize H with (v, site).
+    apply H.
+    destruct H1 as [val]. destruct H1.
+    simpl in *.
+    destruct (vto =? v) eqn:vcase. {
+      (* vto =? v = true is impossible *)
+      injection H1 as Hav. rewrite <- Nat.eqb_eq in Hav.
+      rewrite Hav in H2. simpl in *. rewrite <- Nat.eqb_eq in H2.
+      rewrite Nat.eqb_sym in vcase. rewrite Nat.eqb_sym in H2.
+      rewrite vcase in case. rewrite H2 in case.
+      simpl in case. discriminate.
+    }
+    destruct (addr =? val) eqn:addrcase.
+    + simpl in H2.
+      rewrite Nat.eqb_eq in addrcase. subst.
+      
+      
+
+      
