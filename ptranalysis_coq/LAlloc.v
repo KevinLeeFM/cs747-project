@@ -1011,7 +1011,7 @@ Qed.
 
 (* Unfortunately, I have gotten stuck trying to prove the below fact, which has been leading me to nothing but dead ends. We are certain that in our imperative programming system, recursive definition of program is not allowed. As such, we will pose this as an axiom.
 
-It would be ideal to try and prove this without requiring defining such an axiom, such as showing the lack of well-foundedness of this value. But this is rather pedantic and not relevant to our domain of interest. *)
+It would be ideal to try and prove this without requiring defining such an axiom. But this is rather pedantic and not relevant to our domain of interest. *)
 
 Axiom no_recursion :
   forall (si1' si2 : Ensemble AllocSite)
@@ -1051,7 +1051,7 @@ Qed.
 Lemma AndersenStepPartial : forall
   {si_a si_a' si_b}
   {c1 : Control si_a} {c1' : Control si_a'} {c2 : Control si_b}
-  {pts1 pts2 pts3 : PointsToStatus}
+  {pts1 pts2 : PointsToStatus}
   {dis : Disjoint _ si_a si_b}
   {dis' : Disjoint _ si_a' si_b},
   AndersenStep (Seq c1 c2 dis) pts1 (Seq c1' c2 dis') pts2 ->
@@ -1088,8 +1088,36 @@ Theorem AndersenStepSound : forall {si_a si_b} {c1 : Control si_a} {c2 : Control
 Proof.
   intros.
   dependent induction H0.
-
-(* Theorem Andersen_sound : SoundApprox ConcretePointsTo Andersen. Proof.
-  unfold SoundApprox.
-  intros.
-  eapply AndersenMoveClosureCarriesAlloc. *)
+  - eapply AndersenStepPartial in H1.
+    eapply IHStep; assumption.
+  - assert (pts1 = pts2) as Heq. {
+      eapply AndersenStepSkip.
+      2: { exact H1. }
+      constructor. constructor.
+    }
+    subst. assumption.
+  - assert (StatusMove pts1 vfrom vto = pts2) as Heq. {
+      eapply AndersenStepAssign.
+      2: { exact H1. }
+      constructor.
+    }
+    subst. unfold StatusMove. unfold Overapprox in *. intros.
+    destruct p as [v site].
+    destruct (v =? vto) eqn:vcase.
+    + left. specialize H with (vfrom, site).
+      erewrite Nat.eqb_eq in vcase. subst.
+      apply H.
+      unfold ConcreteAnalysis in *.
+      destruct H0 as [val]. exists val.
+      destruct H0. split.
+      * rewrite <- H0.
+        unfold WriteMap. simpl in *. rewrite Nat.eqb_refl. 
+        reflexivity.
+      * unfold WriteMap in *. simpl in *. assumption.
+    + specialize H with (v, site).
+      apply H. unfold ConcreteAnalysis in *.
+      destruct H0 as [val]. exists val.
+      unfold WriteMap in *.
+      simpl in *. rewrite Nat.eqb_sym in vcase.
+      rewrite vcase in H0. assumption.
+  - 
