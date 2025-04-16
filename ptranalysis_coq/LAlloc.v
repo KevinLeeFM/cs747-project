@@ -40,8 +40,8 @@ Definition EmptyState := State_Mk (fun _ => None) (fun _ => None).
 Definition WriteMap {Ret} (f : Var -> Ret) (k : Var) (v : Ret) : Var -> Ret :=
   fun k' => if Nat.eqb k k' then v else f k'.
 
-Definition Unallocated (h : Heap) (addr : Addr) : Prop :=
-  h addr = None.
+Definition Unallocated (sig : Valuation) (h : Heap) (addr : Addr) : Prop :=
+  h addr = None /\ forall (v : Var), sig v <> Some addr.
 
 Lemma disjointEmptyL : forall {A} (s : Ensemble A),
   Disjoint _ (Empty_set _) s.
@@ -85,7 +85,7 @@ Inductive Step : forall {si_a si_b},
   {l : AllocSite} {addr : Addr} {vto : Var}
   {h h' : Heap}
   {sig sig' : Valuation},
-  Unallocated h addr ->
+  Unallocated sig h addr ->
   h' = WriteMap h addr (Some (HeapObj_Mk None l)) ->
   sig' = WriteMap sig vto (Some addr) ->
   Step (Alloc l vto) (State_Mk h sig) Skip (State_Mk h' sig').
@@ -1133,20 +1133,28 @@ Proof.
     destruct (andb (v =? vto) (site =? l)) eqn:case. { trivial. }
     specialize H with (v, site).
     apply H.
-    destruct H1 as [val]. destruct H1.
+    destruct H1 as [val].
     simpl in *.
+
+    (* In the two contradictions below, we show that v =? vto and site=? l
+       cannot have XOR relation. *)
     destruct (vto =? v) eqn:vcase. {
-      (* vto =? v = true is impossible *)
+      destruct H1.
       injection H1 as Hav. rewrite <- Nat.eqb_eq in Hav.
       rewrite Hav in H2. simpl in *. rewrite <- Nat.eqb_eq in H2.
       rewrite Nat.eqb_sym in vcase. rewrite Nat.eqb_sym in H2.
       rewrite vcase in case. rewrite H2 in case.
       simpl in case. discriminate.
     }
-    destruct (addr =? val) eqn:addrcase.
-    + simpl in H2.
+    destruct (addr =? val) eqn:addrcase. {
+       destruct H1.
       rewrite Nat.eqb_eq in addrcase. subst.
-      
-      
+      unfold Unallocated in *.
+      destruct H0 as [HUn1 HUn2].
+      specialize HUn2 with v.
+      contradiction.
+    }
 
+    exists val. assumption.
+Qed.
       
