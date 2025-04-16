@@ -669,12 +669,6 @@ Proof.
   econstructor; eassumption.
 Qed.
 
-Lemma AFPTImpliesSucc : forall
-  {si1 si2} {c1 : Control si1} {c2 : Control si2}
-  {pts1 pts2},
-  AbstractFlowPointsTo pts1 c1 c2 pts2 ->
-  Succ c1 c2.
-
 Lemma SingletonInjection : forall {A} {x y : A},
   Singleton A x = Singleton A y -> x = y.
 Proof.
@@ -703,76 +697,6 @@ Proof.
   - apply SingletonNotEmptyAlt in x0.
     contradiction.
 Qed.
-
-Lemma AFPTImpliesAllocCarryingRecursive :
-  forall {si} {c : Control si} {vto} {site} {pts1},
-  ~(pts1 (vto, site)) ->
-  (exists pts2,
-    (AbstractFlowPointsTo pts1 c Skip pts2 /\
-    pts2 (vto, site))) ->
-  (exists vfrom,
-    PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
-Proof.
-  intros.
-  destruct H0 as [pts2].
-  destruct H0 as [H1].
-  dependent induction H1.
-  - contradiction.
-  (* To solve this case, we need to break the problem
-     into the following cases:
-     - pts2 (vto, site):
-       Both alloc and series of moves occured in c1 -> c2.
-       By induction, the conclusion is satisfied by c1.
-     - ~(pts2 (vto, site))
-       Both alloc and series of moves occured in c2 -> Skip.
-       By induction, the conclusion is satisfied by c2
-       which implies that it is also satisfied by c1, since
-       c2 is a sub-program of c1.
-     - Alloc occured in c1 -> c2 with a series of move to an
-       intermediate variable, and
-       another series of moves occured in c2 -> Skip.
-       By induction, a variant of the conclusion is satisfied by an
-       intermediate variable vmid and c1, then a move closure exists from vmid
-       to vto within c2. This is sufficient to show that
-       a move closure exists from vto to vfrom in c1, thus
-       satisfying the conclusion.
-  *)
-  - give_up.
-  - contradiction.
-  - give_up.
-Admitted.
-(* Give up for the time being *)
-
-
-(* We're trying to prove this, but we need to point this to a recursive version, seen above *)
-Lemma AFPTImpliesAllocCarrying :
-  forall {si} {c : Control si} {vto} {site},
-  (exists pts,
-    AbstractFlowPointsTo EmptyStatus c Skip pts /\
-    pts (vto, site)) ->
-  (exists vfrom,
-    PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
-Admitted. 
-(* Give up for the time being since it is no longer useful. *)
-
-Lemma CompleteConcretePointsToImpliesAllocCarrying :
-  forall {si} {c : Control si} {vto : Var} {site : AllocSite} {s},
-  StepClosure c EmptyState Skip s ->
-  ConcreteStatePointsTo s vto site ->
-  (exists vfrom, PTMoveClosure c vto vfrom /\ PTAlloc c vfrom site).
-Proof.
-  intros.
-Admitted. 
-(* Give up for the time being since it is no longer useful. *)
-
-Lemma ConcretePointsToImpliesAllocCarrying :
-  forall {si} {p : Control si} {v1 : Var} {site : AllocSite},
-  ConcretePointsTo p v1 site ->
-  (exists v2, PTMoveClosure p v1 v2 /\ PTAlloc p v2 site).
-Proof.
-  intros.
-Admitted. 
-(* Give up for the time being since it is no longer useful. *)
 
 (* NOTE: At this point, my supervisor intervened and suggests that I prove the soundness of Andersen in LAlloc from a different angle. Since we have been defining Andersen as a sort of step closure, it is known from experience to be very hard to prove. Instead, we will redefine Andersen as a stepping analysis, to avoid the logical overhead of dealing with transitive closure. *)
 
@@ -820,7 +744,8 @@ Inductive AndersenStep : forall {si_a si_b},
   {c1 : Control si1} {c2 : Control si2} {c1' : Control si1'}
   (dis : Disjoint _ si1 si2)
   (dis' : Disjoint _ si1' si2),
-  AndersenStep c1 pts c1' pts' -> AndersenStep (Seq c1 c2 dis) pts (Seq c1' c2 dis') pts'
+  AndersenStep c1 pts c1' pts' ->
+  AndersenStep (Seq c1 c2 dis) pts (Seq c1' c2 dis') pts'
 | AStep_SeqR : forall
   {si} {c : Control si} {pts : PointsToStatus},
   AndersenStep (SkipLSeq c) pts c pts
@@ -850,9 +775,9 @@ Ltac inject_all_existT :=
   end.
 
 Lemma AndersenStepErasure : forall
-    {si1 si2} {c1 : Control si1} {c2 : Control si2}
-    {pts1 pts2},
-    AndersenStep c1 pts1 c2 pts2 -> Succ c1 c2.
+  {si1 si2} {c1 : Control si1} {c2 : Control si2}
+  {pts1 pts2},
+  AndersenStep c1 pts1 c2 pts2 -> Succ c1 c2.
 Proof.
   intros.
   dependent induction H;
@@ -877,8 +802,11 @@ Proof.
     constructor. reflexivity.
 Qed.
   
-Definition AndersenStepHoare {sih} (ch : Control sih) (f : PointsToStatus -> PointsToStatus) : Prop :=
-  forall {si1 si2} {c1 : Control si1} {c2 : Control si2} {pts1 pts2 : PointsToStatus},
+Definition AndersenStepHoare {sih}
+  (ch : Control sih) (f : PointsToStatus -> PointsToStatus) : Prop :=
+  forall
+    {si1 si2} {c1 : Control si1} {c2 : Control si2}
+    {pts1 pts2 : PointsToStatus},
   Head c1 ch ->
   AndersenStep c1 pts1 c2 pts2 ->
   f pts1 = pts2.
@@ -961,7 +889,9 @@ Qed.
 
 Lemma AndersenStepIgnoresSucc : forall
   {si1 si1' si2 si2' sih}
-  {c1 : Control si1} {c1' : Control si1'} {c2 : Control si2} {c2' : Control si2'} {ch : Control sih} {pts pts' : PointsToStatus},
+  {c1 : Control si1} {c1' : Control si1'}
+  {c2 : Control si2} {c2' : Control si2'}
+  {ch : Control sih} {pts pts' : PointsToStatus},
   Head c1 ch ->
   Head c2 ch ->
   Succ c1 c1' ->
@@ -1021,7 +951,9 @@ Axiom no_recursion :
     eq_rect _ (fun s2 => Control s2)
             (Seq c1' c2 dis) si2 H5_ <> c2.
 
-Lemma NoSuccForSkip : forall {si1' si2} {c1' : Control si1'} {c2 : Control si2} {dis : Disjoint _ si1' si2},
+Lemma NoSuccForSkip : forall
+  {si1' si2} {c1' : Control si1'} {c2 : Control si2}
+  {dis : Disjoint _ si1' si2},
   Succ (SkipLSeq c2) (Seq c1' c2 dis) -> False.
 Proof.
   intros.
@@ -1058,7 +990,9 @@ Lemma AndersenStepPartial : forall
   AndersenStep c1 pts1 c1' pts2.
 Proof.
   intros.
-  assert (exists (si_h : Ensemble AllocSite) (ch : Control si_h), (Head c1 ch) /\ (Head (Seq c1 c2 dis) ch)) as Hch.
+  assert (
+    exists (si_h : Ensemble AllocSite) (ch : Control si_h),
+      (Head c1 ch) /\ (Head (Seq c1 c2 dis) ch)) as Hch.
   2: {
     destruct Hch as [si_h [ch]].
     destruct H0. 
@@ -1080,7 +1014,8 @@ Proof.
   }
 Qed.
   
-Theorem AndersenStepSound : forall {si_a si_b} {c1 : Control si_a} {c2 : Control si_b} {s1 s2} {pts1 pts2},
+Theorem AndersenStepSound : forall
+  {si_a si_b} {c1 : Control si_a} {c2 : Control si_b} {s1 s2} {pts1 pts2},
   Overapprox (ConcreteAnalysis s1) pts1 ->
   Step c1 s1 c2 s2 ->
   AndersenStep c1 pts1 c2 pts2 ->
@@ -1136,7 +1071,7 @@ Proof.
     destruct H1 as [val].
     simpl in *.
 
-    (* In the two contradictions below, we show that v =? vto and site=? l
+    (* In the two contradictions below, we show that v =? vto and site =? l
        cannot have XOR relation. *)
     destruct (vto =? v) eqn:vcase. {
       destruct H1.
@@ -1147,7 +1082,7 @@ Proof.
       simpl in case. discriminate.
     }
     destruct (addr =? val) eqn:addrcase. {
-       destruct H1.
+      destruct H1.
       rewrite Nat.eqb_eq in addrcase. subst.
       unfold Unallocated in *.
       destruct H0 as [HUn1 HUn2].
