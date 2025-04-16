@@ -114,7 +114,8 @@ Definition Reachable {si} (program : Control si) (state : State) : Prop :=
 Definition Consistent (s : State) : Prop :=
   exists (si : Ensemble AllocSite) (program : Control si), Reachable program s.
 
-Definition ConcreteStatePointsTo (s : State) (v : Var) (site : AllocSite) : Prop :=
+Definition ConcreteStatePointsTo
+  (s : State) (v : Var) (site : AllocSite) : Prop :=
   exists (p : Addr),
   State_valuation s v = Some p /\
     match State_heap s p with
@@ -367,19 +368,6 @@ Proof.
   intros. unfold Reachable. unfold CondReachable. reflexivity.
 Qed.
 
-Lemma CondReachableDecompose
-  {si1 si2} {s1 s2 : State} {fst : Control si1} {snd : Control si2}
-  (dis : Disjoint _ si1 si2) :
-  CondReachable (Seq fst snd dis) s1 s2 ->
-    CondReachable fst s1 s2 \/ (
-      exists (s' : State),
-      StepClosure fst s1 Skip s' /\ CondReachable snd s' s2
-    ).
-Proof.
-  intros.
-  unfold CondReachable in H.
-  destruct H as [si']. destruct H as [p'].
-
 Lemma PTAllocComposition :
   forall {si1 si2} {p1 : Control si1} {p2 : Control si2} {v : Var} {site : AllocSite} (dis : Disjoint _ si1 si2),
   PTAlloc p1 v site \/ PTAlloc p2 v site <-> PTAlloc (Seq p1 p2 dis) v site.
@@ -458,15 +446,6 @@ Proof.
   rewrite (Nat.eqb_refl vto). simpl in *.
   split; assumption.
 Qed.
-
-Lemma AssignKeepsOldVFrom : forall {vto vfrom : Var} {site : AllocSite} {s1 s2 : State},
-  StepClosure (Assign vto vfrom) s1 Skip s2 ->
-  ConcreteStatePointsTo s1 vfrom site ->
-  ConcreteStatePointsTo s2 vfrom site.
-Proof.
-  intros.
-  dependent induction H.
-  specialize IHStepClosure with vto vfrom. 
 
 Lemma AssignKillsOldVTo : forall {vto vfrom : Var} {site site' : AllocSite} {s1 s2 : State},
   Step (Assign vto vfrom) s1 Skip s2 ->
@@ -939,7 +918,7 @@ Proof.
     exact H.
 Qed.
 
-(* Unfortunately, I have gotten stuck trying to prove the below fact, which has been leading me to nothing but dead ends. We are certain that in our imperative programming system, recursive definition of program is not allowed. As such, we will pose this as an axiom.
+(* Unfortunately, I have gotten stuck trying to prove the below fact, which has been leading me to nothing but dead ends. We are certain that in our imperative programming system, recursive syntactic definition of a program is not allowed. As such, we will pose this as an axiom.
 
 It would be ideal to try and prove this without requiring defining such an axiom. But this is rather pedantic and not relevant to our domain of interest. *)
 
@@ -1092,4 +1071,3 @@ Proof.
 
     exists val. assumption.
 Qed.
-      
